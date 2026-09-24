@@ -10,7 +10,8 @@ import yaml
 
 
 class MeasurementTree:
-    def __init__(self, filepath, index=True, override: bool = False, chunk=None, keep_file_open=False, mode='r'):
+    def __init__(self, filepath, index=True, override: bool = False, chunk=None, keep_file_open=False, mode='r',
+                 nc_path=None):
         """
         :param filepath: r-string that points to h5 file
         :param index: optional: tuple that describes group number and group internal number
@@ -19,6 +20,7 @@ class MeasurementTree:
         """
         self.filepath = filepath
         self.path = pl.Path(filepath).absolute()
+        self.nc_path = nc_path
         print(self.path)
         self.f = h5py.File(self.path, mode)
         self.definition = []
@@ -74,14 +76,25 @@ class MeasurementTree:
         except PermissionError:
             obj.to_netcdf(str(path).encode('UTF-8'))
 
+    def get_save_path(self) -> pl.Path:
+        if self.index is not True:
+            name = self.path.with_suffix('').name + str(self.index)
+            default = self.path.with_name(name).with_suffix('.nc')
+        else:
+            default = self.path.with_suffix('.nc')
+        if self.nc_path is None:
+            return default.absolute()
+        nc_path = pl.Path(self.nc_path).absolute()
+        if nc_path.suffix == '.nc':
+            return nc_path
+        return nc_path / default.name
+
     def save_netcdf(self):
         self.array: xr.DataArray
         if self.index is not True:
-            name = self.path.with_suffix('').name + str(self.index)
             print(f'Index: {self.index}')
-            self.save_path = self.path.with_name(name).with_suffix('.nc').absolute()
-        else:
-            self.save_path = self.path.with_suffix('.nc').absolute()
+        self.save_path = self.get_save_path()
+        self.save_path.parent.mkdir(parents=True, exist_ok=True)
         if self.dataset is not None:
             if self.chunk is not None:
                 if isinstance(self.dataset, dict):
@@ -100,7 +113,7 @@ class MeasurementTree:
 
         if self.index is True:
             try:
-                self.save_path = self.path.with_suffix('.nc').absolute()
+                self.save_path = self.get_save_path()
                 self.dataset = xr.open_dataset(self.save_path)
                 print(f'Successfully loaded {self.save_path}')
             except FileNotFoundError:
@@ -111,8 +124,7 @@ class MeasurementTree:
             raise FileNotFoundError
         elif self.index is not False:
             try:
-                name = self.path.with_suffix('').name + str(self.index)
-                self.save_path = self.path.with_name(name).with_suffix('.nc').absolute()
+                self.save_path = self.get_save_path()
                 self.array = xr.open_dataarray(self.save_path)
                 self.dataset = xr.open_dataarray(self.save_path)
             except FileNotFoundError:
